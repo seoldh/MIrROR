@@ -1,0 +1,4 @@
+NAME GROUP1 GROUP2
+BC01.paf groupA class1
+BC02.paf groupB class2
+BC03.paf	groupB	class1

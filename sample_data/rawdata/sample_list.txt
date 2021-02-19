@@ -1,0 +1,4 @@
+NAME	Group
+BC01.fastq	groupA
+BC02.fastq	groupA
+BC03.fastq	groupB
