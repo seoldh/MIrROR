@@ -21,8 +21,8 @@ MIrROR.py -h
 
 # Download 16S-23S rRNA operon database
 mkdir DBDIR && cd DBDIR
-wget http://mirror.snu.ac.kr/latest/MIrROR_db.mmi
-wget http://mirror.snu.ac.kr/latest/MIrROR_taxonomy.tsv
+wget http://mirror.egnome.co.kr/media/ToolsDatabase/2021_01/MIrROR_DB_r01.mmi
+wget http://mirror.egnome.co.kr/media/ToolsDatabase/2021_01/MIrROR_DB_r01.tsv
 
 # Usage examples
 MIrROR.py -K -d DBDIR sample.fastq         # for single FASTQ file with Krona plot
