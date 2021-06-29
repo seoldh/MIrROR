@@ -2,7 +2,7 @@
 <img src="https://user-images.githubusercontent.com/31500750/100863170-817d0800-34d7-11eb-9928-8a19502762d0.png" height="180">
 
 **Platform for metataxonomics with 16S-23S rRNA operon.**</br>
-Recently, with the development of Nanopore sequencing technology, there have been studies evaluating taxonomic resolution when 16S-23S rRNA operon region is used as a taxonomic marker in bacteria. Analyzing 16S-23S rRNA operon has the advantage of giving more information than analyzing only 16S rRNA sequence with short-read sequencing, enabling accurate analysis at the species level with compensating for high error rates of Nanopore read. MIrROR provides a curated database for rRNA operon and analysis tools.
+Recently, with the development of Nanopore sequencing technology, there have been studies evaluating taxonomic resolution using 16S-23S rRNA operon region as a taxonomic marker in bacteria. Analyzing 16S-23S rRNA operon has the advantage of having more information than analyzing only 16S rRNA sequence with short-read sequencing, enabling accurate analysis at the species level with compensating for high error rates of Nanopore read. MIrROR provides a curated database for rRNA operon and analysis tools.
 
 ## Quick Start
 
@@ -21,8 +21,8 @@ MIrROR.py -h
 
 # Download 16S-23S rRNA operon database
 mkdir DBDIR && cd DBDIR
-wget http://mirror.egnome.co.kr/media/ToolsDatabase/2021_01/MIrROR_DB_r01.mmi
-wget http://mirror.egnome.co.kr/media/ToolsDatabase/2021_01/MIrROR_DB_r01.tsv
+wget http://mirror.egnome.co.kr/media/ToolsDatabase/2021_06/MIrROR_DB_r01.mmi
+wget http://mirror.egnome.co.kr/media/ToolsDatabase/2021_06/MIrROR_DB_r01.tsv
 
 # Usage examples
 MIrROR.py -K -d DBDIR sample.fastq         # for single FASTQ file with Krona plot
@@ -102,8 +102,8 @@ INPUTFILE: FASTA/FASTQ/PAF | SAMPLELIST
 ```
 ### Input
 
-MIrROR requires FASTA/FASTQ/PAF or sample list as input. In case of PAF file as input, the mapping process is skipped and only abundance table is created.</br>
-The sample list can contain one or more groups separated by tab along with the header. Also it can contain PAF and FASTA/FASTQ together.
+MIrROR requires FASTA/FASTQ/PAF or sample list as input. In case of using PAF file as input, the mapping process is skipped and only abundance table is created.</br>
+The sample list can contain one or more groups separated by tabs along with the header. Also, it can contain PAF and FASTA/FASTQ together.
 ```
 more list.txt
 Sample         Status      Smoke
