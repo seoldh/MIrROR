@@ -1,10 +1,10 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 
 import sys, re, os, datetime, platform, glob, math, time
 
-MYVERSION = 'MIrROR tools v0.1'
-BUILDDATE = '2021-01-21'
-MYBUILT = "built %s" % (datetime.datetime.strptime(BUILDDATE,'%Y-%m-%d').strftime('%b %d %Y'))
+MYVERSION = 'MIrROR analysis tool v1.0'
+BUILDDATE = '2022-04-28'
+MYBUILT = "Built on %s" % (datetime.datetime.strptime(BUILDDATE,'%Y-%m-%d').strftime('%b %d %Y'))
 DBVERSION = ''
 OSSYSTEM = platform.system()
 options = ''
@@ -16,7 +16,7 @@ skipmapping = False
 fastaextlist = ['.fasta','.fasta.gz','.fa','.fa.gz']
 fastqextlist = ['.fastq','.fastq.gz','.fq','.fq.gz']
 pafextlist = ['.paf']
-ProcessStep = {1:'filecheck',2:'mapping',3:'classification',4:'OTUtable',5:'graph'}
+ProcessStep = {1:'filecheck',2:'mapping',3:'classification',4:'OTUtable',5:'visualization'}
 
 filepersample = {}
 sampleorder = []
@@ -154,7 +154,7 @@ def ConfirmInput_main():
     WriteLog("LOG", "%-26s : %s" % ("DataBase",databasestr), True)
     WriteLog("LOG", "%-26s : %s" %("Input Format",inputformatstr), True)
     WriteLog("LOG", "%-26s : %s" %("Group information",groupexist), True)
-    WriteLog("LOG", "%-26s : Number of residue matches-%dbp, Alignment block length - %dbp" %("Read filtering threshold",options.residuemaches, options.blocklength), True)
+    WriteLog("LOG", "%-26s : Number of residue matches - %d bp, Alignment block length - %d bp" %("Read filtering threshold",options.residuemaches, options.blocklength), True)
     WriteLog("LOG", "\n", True)
 
     return rv
@@ -234,7 +234,10 @@ def step1_Rawdata():
                 if( not os.path.isfile(fileinfo['loc']) ):
                     WriteLog("Error", "File not exist : %s" % (fileinfo['loc']))
                     rv = False        
-    WriteLog("INFO", "%d samples procedding"%(savedfile))
+    if( savedfile == 1 ):
+        WriteLog("INFO", "%d sample proceeding"%(savedfile))
+    else:
+        WriteLog("INFO", "%d samples proceeding"%(savedfile))
 
     return rv
 
@@ -585,7 +588,6 @@ def step4_Makeoutfile():
 
             count = int(line_temp[-1])
             if( options.normalization ):
-                print("**nomalization **")
                 count = count / taxa_ave[taxa]
 
             tempstr = SEP.join(new_line_temp)
@@ -603,7 +605,6 @@ def step4_Makeoutfile():
         for tempstr, count in WDATA_remove.items():
             fpout_remove.write(" ".join(map(str,[tempstr,count]))+"\n")
             
-        WriteLog("INFO", "Create OTU file : %s"%(outfile_path))
         fp.close()
         fpout.close()
         fpout_remove.close()
@@ -621,13 +622,15 @@ def step4_Makeoutfile():
 
     merged_file = "%s/OUTPUT_std.txt" % (outfolder)
     Make_Merged_Sample_type(outfile_list, '_out.txt', merged_file) 
-    WriteLog("INFO","Created file : %s" %(merged_file))
+    WriteLog("INFO","Created OTU table (standard version)  : %s" %(merged_file))
 
     merged_file = "%s/OUTPUT_mpa.txt" % (outfolder)
     Make_Merged_Sample_type1(outfile_levelremove_list, '_out_removelevel.txt', merged_file)
+    WriteLog("INFO","                  (MetaPhlAn version) : %s" %(merged_file))
 
     merged_file = "%s/OUTPUT_std_type2.txt" % (outfolder)
     Make_Merged_Sample_type2(outfile_list, '_out.txt', merged_file)
+    WriteLog("INFO","                  (for Krona plot)    : %s" %(merged_file))
 
 
     for rfile in outfile_list + outfile_levelremove_list:
@@ -696,8 +699,12 @@ def step5_graph():
         for domain in ['phylum','class','order','family','genus','species']:
             stacked_file = "%s/stacked_%s.png" % (outfolder, domain)
             stacked_plot(merged_file_forgraph, domain ,"group", stacked_file)
-
-            WriteLog("INFO","Created Stacked plot Graphs : %s" % (stacked_file))
+            
+            blank = " " * (11-len(domain))
+            if( domain == 'phylum' ):
+                WriteLog("INFO","Created Stacked bar plot (%s)%s: %s" % (domain, blank, stacked_file))
+            else:
+                WriteLog("INFO","                         (%s)%s: %s" % (domain, blank, stacked_file))
     
     mustremovefile.append(merged_file_forgraph)    
 
@@ -705,10 +712,7 @@ def step5_graph():
         if( os.path.isfile(rfile)):
             writelog = False
             if( os.path.basename(rfile) == 'krona.log'):
-                WriteLog("INFO", "Log from krona")
-                writelog = True
-            if( os.path.basename(rfile) == 'lefse.log'):
-                WriteLog("INFO", "Log from LEfSe")
+                WriteLog("INFO", "Log from OTUsamples2krona")
                 writelog = True
                 
             if( writelog ):
@@ -721,7 +725,7 @@ def step5_graph():
 
     if(options.krona is not None or options.visualized is not None ):
         if( os.path.isdir("%s/krona" % (outfolder)) ):
-            WriteLog("INFO","Created Krona Graphs in  %s/krona" % (outfolder))
+            WriteLog("INFO","Created Krona plot                    :  %s/krona" % (outfolder))
 
     return True
 
@@ -730,7 +734,7 @@ def Proceding(step):
     rv = False
 
     if( step == 1):
-        WriteLog("INFO","##%s STEP START"%(ProcessStep[step]) )
+        WriteLog("INFO","%s STEP START"%(ProcessStep[step]) )
         MakeFolder(step,False)
         rv = step1_Rawdata()
 
@@ -780,18 +784,18 @@ def Main(l_options,l_args, l_command):
     
     rv = ConfirmInput_main()
     if( rv ):
-        WriteLog("INFO",'MIrROR tools Start')
+        WriteLog("INFO",'MIrROR analysis Start')
         CurrentProcess = {1:'filecheck',2:'mapping',3:'classification',4:'OTUtable'}
 
         if( options.krona or options.stackedplot or options.visualized ):
-            CurrentProcess.setdefault(5,'graph')
+            CurrentProcess.setdefault(5,'visualization')
 
         for step, foldname in CurrentProcess.items():
             rv = Proceding(step)
             if( not rv ):
                 WriteLog("Error","Error occurred during step %s"%(foldname))
                 sys.exit()
-        WriteLog("INFO",'MIrROR tools Done!')
+        WriteLog("INFO",'MIrROR analysis Completed!')
     else:
         WriteLog("Error",'Input File Error')
 
@@ -799,4 +803,4 @@ def Main(l_options,l_args, l_command):
     elapsed_time = datetime.timedelta(seconds=end-start)
     WriteLog("INFO", "\n%-26s : %s" % ("Total time used",elapsed_time), True)
     fplog.close()
-    print("\nMIrROIR tools log file created : %s\n" % (fplogfile))
+    print("\nMIrROR analysis log file is created : %s\n" % (fplogfile))
