@@ -192,7 +192,7 @@ d__Bacteria;p__Bacillota_A;c__Clostridia;...;s__Faecalibacterium_prausnitzii    
 If you use MIrROR in your research, **please cite both papers**:
 
 **MIrROR tool and release 01 database:**
-> Seol D, Lim JS, Sung S, Lee YH, Jung M, Cho S, Kwak W, Kim H.  
+> Seol D, Lim JS, Sung S, Lee YH, Jeong M, Cho S, Kwak W, Kim H.  
 > **Microbial Identification Using rRNA Operon Region: Database and Tool for Metataxonomics with Long-Read Sequence.**  
 > *Microbiology Spectrum*, 10(2): e02017-21 (2022). https://doi.org/10.1128/spectrum.02017-21
  
