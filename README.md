@@ -2,18 +2,17 @@
 <img src="https://user-images.githubusercontent.com/31500750/100863170-817d0800-34d7-11eb-9928-8a19502762d0.png" height="180">
 
 **Analysis tool for metataxonomics using 16S-ITS-23S rRNA operon region.**</br>
-With the advancement of long-read sequencing technologies, the field of metataxonomics has entered a new phase. Analyzing the 16S-ITS-23S rRNA operon region (~4,300 bp) for bacterial community profiling provides more taxonomic information than analyzing only partial 16S rRNA gene sequences using short-read sequencing, allowing for species-level analysis. MIrROR provides a curated database and analysis tool for metaxonomics using 16S-ITS-23S rRNA operon region.
+With the advancement of long-read sequencing technologies, the field of metataxonomics has entered a new phase. Analyzing the 16S-ITS-23S rRNA operon region (~4,300 bp) for microbial (bacterial/archaeal) community profiling provides more taxonomic information than analyzing only partial 16S rRNA gene sequences using short-read sequencing, allowing for species-level analysis. MIrROR provides a curated database and analysis tool for metaxonomics using 16S-ITS-23S rRNA operon region.
 
 ---
 
 ## 📢 Database Update: MIrROR release 02 (2026)
 
-**MIrROR release 02** database has been published in *Scientific Data*:
-Key highlights of release 02:
+**MIrROR release 02** database has been published in *Scientific Data*.
 - Built from **1,690,470 genomes** (1,674,514 bacterial + 15,956 archaeal) from NCBI
 - Final curated dataset: **476,579 sequences**, **249,907 genomes**, **29,051 species**
 - **Archaeal genomes included** for the first time
-- Taxonomy reclassified using **GTDB R220**
+- Taxonomic reclassification using **GTDB R220**
 
 ---
 
@@ -151,7 +150,7 @@ BC04.paf       Sick        non-smoker
  
 Primer binding site sequences vary across species and lineages. As a result, no single primer set amplifies all taxa with equal efficiency, and **certain species in your sample may be missed depending on the primer pair used.** We strongly recommend evaluating candidate primer sets against the taxa most relevant to your study before finalizing your experimental design.
  
-Use the [MIrROR Primer Checker](https://github.com/jisoll/MirrorPrimerChecker) for *in silico* coverage assessment against the release 02 database.
+Use the [MIrROR Primer Checker](https://github.com/jisoll/MirrorPrimerChecker) for *in silico* coverage assessment against MIrROR release 02.
 
 ### Available primer sets
  
@@ -191,12 +190,12 @@ d__Bacteria;p__Bacillota_A;c__Clostridia;...;s__Faecalibacterium_prausnitzii    
 
 If you use MIrROR in your research, **please cite both papers**:
 
-**MIrROR tool and release 01 database:**
+**MIrROR tool and release 01:**
 > Seol D, Lim JS, Sung S, Lee YH, Jeong M, Cho S, Kwak W, Kim H.  
 > **Microbial Identification Using rRNA Operon Region: Database and Tool for Metataxonomics with Long-Read Sequence.**  
 > *Microbiology Spectrum*, 10(2): e02017-21 (2022). https://doi.org/10.1128/spectrum.02017-21
  
-**MIrROR release 02 database:**
+**MIrROR release 02:**
 > Lee J, Hong J, Seol D, Lee W, Lee J, Kim G, Cho S, Kim H.  
 > **MIrROR release 02: Expanded and refined 16S-ITS-23S rRNA operon dataset.**  
 > *Scientific Data*, 13: 714 (2026). https://doi.org/10.1038/s41597-026-06729-y
