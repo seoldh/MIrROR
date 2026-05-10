@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
-import sys, re, os, datetime, platform, glob, math, time
+import sys, re, os, datetime, platform, glob, math, time, subprocess
 
-MYVERSION = 'MIrROR analysis tool v1.0'
-BUILDDATE = '2022-04-28'
+MYVERSION = 'MIrROR v1.1'
+BUILDDATE = '2026-05-10'
 MYBUILT = "Built on %s" % (datetime.datetime.strptime(BUILDDATE,'%Y-%m-%d').strftime('%b %d %Y'))
-DBVERSION = ''
+DB_RELEASE = '' #e.g. 'r01', 'r02' - derived from MIrROR_DB_rXX.tsv filename
 OSSYSTEM = platform.system()
 options = ''
 args = ''
@@ -16,7 +16,7 @@ skipmapping = False
 fastaextlist = ['.fasta','.fasta.gz','.fa','.fa.gz']
 fastqextlist = ['.fastq','.fastq.gz','.fq','.fq.gz']
 pafextlist = ['.paf']
-ProcessStep = {1:'filecheck',2:'mapping',3:'classification',4:'OTUtable',5:'visualization'}
+ProcessStep = {1:'InputQC',2:'ReadMapping',3:'Classification',4:'FeatureTable',5:'Visualization'}
 
 filepersample = {}
 sampleorder = []
@@ -56,18 +56,10 @@ def MakeFolder(curstep, makefolder=True):
 
 #############
 def MakeLogfile():
-    fploglist = glob.glob("%s/%s*.log" % (options.outputfolder, os.path.basename(options.outputfolder.rstrip("/"))) )
-    logindex = []
-    for fplogfile in fploglist:
-        index = os.path.basename(fplogfile).replace(os.path.basename(options.outputfolder.rstrip("/")),"").replace(".log","")
-        if( index.isdigit() ):
-            logindex.append(int(index))
-
-    currentindex = 0
-    if( len(logindex) > 0 ):
-        currentindex = max(logindex)+1
-
-    fplogfile = "%s/%s.log" % (options.outputfolder,os.path.basename(options.outputfolder.rstrip("/")))
+    fplogfile = "%s/%s.log" % (
+                options.outputfolder,
+                os.path.basename(options.outputfolder.rstrip("/"))
+    )
 
     return fplogfile
 
@@ -95,75 +87,110 @@ def GET_INPUTFORMAT(fname,dir='.'):
         return 'NONE', stat
 
 #############
+def _release_num():
+    try:
+        return int(DB_RELEASE.lstrip('r'))
+    except ValueError:
+        return 0
+
+#############
+def get_taxonomy_categories():
+    if _release_num() >= 2:
+        return ['d', 'p', 'c', 'o', 'f', 'g', 's']
+    else:
+        return ['p', 'c', 'o', 'f', 'g', 's']
+
+#############
+def get_lineage_levels():
+    if _release_num() >= 2:
+        return ['domain', 'phylum', 'class', 'order', 'family', 'genus', 'species']
+    else:
+        return ['phylum', 'class', 'order', 'family', 'genus', 'species']
+
+#############
+def db_path(ext):
+    new_name = "%s/MIrROR_%s%s"    % (options.databasefolder, DB_RELEASE, ext)
+    old_name = "%s/MIrROR_DB_%s%s" % (options.databasefolder, DB_RELEASE, ext)
+    if os.path.isfile(new_name):
+        return new_name
+    return old_name
+
+#############
 def ConfirmInput_main():
     rv = True
-    inputformat = ''
     inputformatstr = ''
     groupexist = 'No'
-
-    mmiversion = []
-    mmilist = glob.glob("%s/MIrROR_DB_*.mmi" % (options.databasefolder))
-    for f in mmilist:
-        vnum = os.path.basename(f).replace("MIrROR_DB_","").replace(".mmi","")
-        mmiversion.append(vnum)
-    tsvversion = []
-    tsvlist = glob.glob("%s/MIrROR_DB_*.tsv" % (options.databasefolder))
-    for f in tsvlist:
-        vnum = os.path.basename(f).replace("MIrROR_DB_","").replace(".tsv","")
-        tsvversion.append(vnum)
     
-    comversion = list(set(mmiversion).intersection(set(tsvversion)))
-    comversion.sort(reverse=True)
-    if( len(comversion) == 0 ):
-        databasestr = "Could not find a suitable file to use as a database."
+    DB_BUILD_DATES = {'r02': 'Jan 01 2025'}
+    
+    tsvlist = glob.glob("%s/MIrROR_DB_r*.tsv" % options.databasefolder)+glob.glob("%s/MIrROR_r*.tsv" % options.databasefolder)
+    tsvlist.sort(reverse=True)
+    
+    if len(tsvlist) == 0:
+        databasestr = "Could not find MIrROR_DB_rXX.tsv or MIrROR_rXX.tsv in: %s" % options.databasefolder
         rv = False
     else:
-        global DBVERSION
-        DBVERSION = comversion[0]
-        
-        database_mmi = "%s/MIrROR_DB_%s.mmi" % (options.databasefolder, DBVERSION)
-        database_tsv = "%s/MIrROR_DB_%s.tsv" % (options.databasefolder, DBVERSION)
-        
-        fp=open(database_tsv,"r")
-        headtemp = fp.readline().strip().split()[0].replace("#","")
-        dbbuild_date = datetime.datetime.strptime(headtemp+" 00:00:00.00000",'%Y-%m-%d %H:%M:%S.%f')
-        fp.close()
-                
-        databasestr = ''
-        databasestr += "%s" % (database_mmi)
-        databasestr += "\n%28s %s" % ("",database_tsv)
-        databasestr += "\n%28s Database release %s (built %s)" % ("",DBVERSION.replace("r",""),dbbuild_date.strftime('%b %d %Y'))
-    
+        global DB_RELEASE
+        basename_tsv = os.path.basename(tsvlist[0])
+        DB_RELEASE = basename_tsv.replace("MIrROR_DB_", "").replace("MIrROR_","").replace(".tsv", "")
+        release_label = "release %02d" % _release_num()
+
+        database_tsv = tsvlist[0]
+        database_mmi = "%s/MIrROR_%s.mmi" % (options.databasefolder, DB_RELEASE)
+
+        if not os.path.isfile(database_mmi):
+            database_mmi = db_path(".mmi")
+
+        if DB_RELEASE in DB_BUILD_DATES:
+            built_str = DB_BUILD_DATES[DB_RELEASE]
+        else:
+            try:
+                with open(database_tsv, "r") as fp:
+                    headtemp = fp.readline().strip().split()[0].replace("#", "")
+                dbbuild_date = datetime.datetime.strptime(
+                        headtemp + " 00:00:00.00000", '%Y-%m-%d %H:%M:%S.%f')
+                built_str = dbbuild_date.strftime('%b %d %Y')
+            except (ValueError, IndexError):
+                built_str = "unknown"
+
+        if os.path.isfile(database_mmi):
+            databasestr = "%s" % database_mmi
+            databasestr += "\n%28s %s" % ("", database_tsv)
+        else:
+            databasestr = "(no .mmi found — mapping will be skipped or use existing PAF)"
+            databasestr += "\n%28s %s" % ("", database_tsv)
+
+        databasestr += "\n%28s Database %s (built %s)" % ("", release_label, built_str)
+
     Readinput()
 
-    if( len(grouporder) > 0 ):
+    if len(grouporder) > 0:
         groupexist = 'Yes'
-        
+
     for sample, infolist in filepersample.items():
         for info in infolist:
-            if( inputformatstr == '' ):
-                inputformatstr += "[%s] %s" % (info['format'], info['exist'])
+            entry = "[%s] %s" % (info['format'], info['exist'])
+            if inputformatstr == '':
+                inputformatstr += entry
             else:
-                inputformatstr += "\n%28s [%s] %s" % ("",info['format'], info['exist'])
-
-            if( 'File Not Exist' in info['exist'] ):
+                inputformatstr += "\n%28s %s" % ("", entry)
+            if 'File Not Exist' in info['exist']:
                 rv = False
 
-    WriteLog("LOG", "%s %s" % (MYVERSION, MYBUILT), True)
-    WriteLog("LOG", "%-26s : %s" % ("Command"," ".join(mycommand)), True)
-    WriteLog("LOG", "%-26s : %s" % ("DataBase",databasestr), True)
-    WriteLog("LOG", "%-26s : %s" %("Input Format",inputformatstr), True)
-    WriteLog("LOG", "%-26s : %s" %("Group information",groupexist), True)
-    WriteLog("LOG", "%-26s : Number of residue matches - %d bp, Alignment block length - %d bp" %("Read filtering threshold",options.residuemaches, options.blocklength), True)
+    WriteLog("LOG", "%s"  % (MYVERSION), True)
+    WriteLog("LOG", "%-26s : %s" % ("Command", " ".join(mycommand)), True)
+    WriteLog("LOG", "%-26s : %s" % ("DataBase", databasestr), True)
+    WriteLog("LOG", "%-26s : %s" % ("Input Format", inputformatstr), True)
+    WriteLog("LOG", "%-26s : %s" % ("Group information", groupexist), True)
+    WriteLog("LOG", "%-26s : Number of residue matches - %d bp, Alignment block length - %d bp" % (
+             "Read filtering threshold", options.residuemaches, options.blocklength), True)
     WriteLog("LOG", "\n", True)
 
     return rv
 
 #############
 def Readinput():
-    global filepersample
-    global sampleorder
-    global grouporder
+    global filepersample, sampleorder, grouporder
 
     for argsfile in args:
         basename = os.path.basename(argsfile)
@@ -218,26 +245,25 @@ def Readinput():
 
     sampleorder.sort()
     return
+
 ###################
 def step1_Rawdata():
-    outfolder = "%s/%s"%(options.outputfolder, ProcessStep[1])
-
-    savedfile = 0
     rv = True
+    savedfile = 0
+    
     for sample, filelist in filepersample.items():
         savedfile += 1
         if( len(filelist) > 1 ):
-            WriteLog("Error", "Sample File Duplicate : %s" %(sample))
+            WriteLog("Error", "Sample file duplicated in input: %s" %(sample))
             rv = False
         else:
             for fileinfo in filelist:
                 if( not os.path.isfile(fileinfo['loc']) ):
-                    WriteLog("Error", "File not exist : %s" % (fileinfo['loc']))
-                    rv = False        
-    if( savedfile == 1 ):
-        WriteLog("INFO", "%d sample proceeding"%(savedfile))
-    else:
-        WriteLog("INFO", "%d samples proceeding"%(savedfile))
+                    WriteLog("Error", "File not found: %s" % (fileinfo['loc']))
+                    rv = False
+
+    label = "sample" if savedfile == 1 else "samples"
+    WriteLog("INFO", "%d %s to process" % (savedfile, label))
 
     return rv
 
@@ -245,313 +271,210 @@ def step1_Rawdata():
 def step2_Mapping(exemapping):
     outfolder = "%s/%s"%(options.outputfolder, ProcessStep[2])
 
-    ref = "%s/MIrROR_DB_%s.mmi" % (options.databasefolder, DBVERSION)
+    ref = db_path(".mmi")
     if( not os.path.isfile(ref)):
-            WriteLog("Error","'%s' not exist" %(ref))
-            return False
-
-    mustremovefile = []
-    systemstr = 'which minimap2 > %s/minimap2.confirm' % (outfolder)
-
-    os.system(systemstr)
-    mustremovefile.append("%s/minimap2.confirm"%(outfolder))
-    
-    fp=open("%s/minimap2.confirm" % (outfolder),"r")
-    head = fp.readline()       
-    fp.close()
-    if( head == '' ):
-        WriteLog("Error","'minimap2' not exist in $PATH" )
-        for rfile in mustremovefile:
-            if( os.path.isfile(rfile)):
-                os.unlink(rfile)
+        WriteLog("Error","Database index not found: %s" %(ref))
         return False
-
-    for rfile in mustremovefile:
-        if( os.path.isfile(rfile)):
-            os.unlink(rfile)
+    
+    try:
+        result = subprocess.run(["which", "minimap2"], capture_output=True, text=True, check=True)
+        if not result.stdout.strip():
+            raise FileNotFoundError
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        WriteLog("Error", "'minimap2' not found in $PATH. "
+                 "Install with: conda install -c bioconda minimap2")
+        return False
 
     mapping_list = []
     idx = 0
     for sample, sampleinfo in filepersample.items():
-        if( sampleinfo[0]['format'] in ['FASTQ','FASTA']):
+        if sampleinfo[0]['format'] in ['FASTQ', 'FASTA']:
             idx += 1
-            WriteLog("INFO","%d / %d Mapping..." % (idx, exemapping))
+            WriteLog("INFO", "%d / %d Mapping..." % (idx, exemapping))
 
-            mapping_path = "%s/%s_minimap.paf" % (outfolder,os.path.basename(sample))
-            log_mapping_path = "%s/%s_minimap.paf.log" % (outfolder,os.path.basename(sample))
-            systemstr = "minimap2 --secondary=no -x map-ont -K %s -t %d -c %s %s -o %s 2> %s" % (options.minibatch, options.threads, ref,  sampleinfo[0]['loc'], mapping_path, log_mapping_path)
-            
-            return_value = os.system(systemstr)
-            if( return_value == 0 ):
+            mapping_path = "%s/%s_minimap.paf" % (outfolder, os.path.basename(sample))
+            log_mapping_path = "%s.log" % mapping_path
+
+            cmd = ["minimap2", "--secondary=no", "-x", options.preset,
+                   "-K", options.minibatch, "-t", str(options.threads), "-c",
+                   ref, sampleinfo[0]['loc'], "-o", mapping_path]
+
+            with open(log_mapping_path, "w") as log_fp:
+                ret = subprocess.run(cmd, stderr=log_fp)
+
+            if ret.returncode == 0:
                 mapping_list.append(mapping_path)
                 sampleinfo[0]['paf'] = mapping_path
+            else:
+                WriteLog("Error", "Minimap2 failed for sample: %s" % sample)
 
-    if( idx != len(mapping_list) ):
-        return False
-
-    return True
+    return idx == len(mapping_list)
 
 ###################
 def step3_Annotaion(skipmapping='False'):
-    outfolder = outfolder = "%s/%s/"%(options.outputfolder, ProcessStep[3])
+    outfolder = "%s/%s/"%(options.outputfolder, ProcessStep[3])
 
-    Annofile = "%s/MIrROR_DB_%s.tsv" % (options.databasefolder, DBVERSION)
+    Annofile = db_path(".tsv")
     accession_taxa={}
-    infile=open(Annofile,"r")
+    
+    with open(Annofile, "r") as infile:
+        for full_lineage in infile:
+            line = full_lineage.strip()
+            if not line or line.startswith("#"):
+                continue
+            taxa = line.split("\t")
+            if taxa[0].lower() in ("accession", "#accession"):
+                continue
+            if len(taxa) >= 8:
+                accession_taxa[taxa[0]] = tuple(taxa[2:])
 
-    for full_lineage in infile:
-        if( full_lineage.startswith("#")):
-            continue
-        if( len(full_lineage.strip()) == 0 ):
-            continue
-        taxa=full_lineage.strip().split("\t")
-        
-        accession_taxa[taxa[0]]=(taxa[2],taxa[3],taxa[4],taxa[5],taxa[6],taxa[7])
-    infile.close()
-
-    classification_list=[]
+    classification_list = []
     idx = 0
     for sample, sampleinfo in filepersample.items():
         idx += 1
-        WriteLog("INFO","%d / %d Annotatioin..." % (idx, len(filepersample)))
+        WriteLog("INFO", "%d / %d Annotation..." % (idx, len(filepersample)))
 
-        mapping_file = sampleinfo[0]['paf']
-        paf_file=open(mapping_file,"r")
-        read_count={}
-        for line in paf_file:
-            element=line.split("\t")
-            if (int(element[9]) >= int(options.residuemaches)) and (int(element[10]) >= int(options.blocklength)):
-                seqname = element[5][:15]
-                read_count.setdefault(seqname,0)
-                read_count[seqname] += 1
-            else: 
-                continue
-        paf_file.close()
+        read_count = {}
+        with open(sampleinfo[0]['paf'], "r") as paf_file:
+            for line in paf_file:
+                element = line.split("\t")
+                if len(element) < 11:
+                    continue
+                try:
+                    if int(element[9]) >= int(options.residuemaches) and \
+                       int(element[10]) >= int(options.blocklength):
+                           seqname = element[5][:15]
+                           read_count[seqname] = read_count.get(seqname, 0) + 1
+                except ValueError:
+                    continue
 
-        result={}
+        result = {}
         for seqname, count in read_count.items():
-            if( seqname in accession_taxa ):
+            if seqname in accession_taxa:
                 seqinfo = accession_taxa[seqname]
-                result.setdefault(seqinfo,0)
-                result[seqinfo] += count
-
-        sorted_result=sorted(result.items(), key=lambda x: x[-1], reverse=True)
-
+                result[seqinfo] = result.get(seqinfo, 0) + count
+        sorted_result = sorted(result.items(), key=lambda x: x[-1], reverse=True)
         classification_path = "%s/%s.txt" % (outfolder, os.path.basename(sample))
-        outfile=open(classification_path,"w")
-        for i in sorted_result:
-            outfile.write("\t".join(i[0])+"\t"+str(i[1])+"\n")
-        outfile.close()
+        with open(classification_path, "w") as outfile:
+            for i in sorted_result:
+                outfile.write("\t".join(i[0]) + "\t" + str(i[1]) + "\n")
         classification_list.append(classification_path)
 
-    if( len(filepersample) != len(classification_list) ):
-        return False
-
-    return True
+    return len(filepersample) == len(classification_list)
 
 ###################
 def Get_Operon():
-    Annofile = "%s/MIrROR_DB_%s.tsv" % (options.databasefolder, DBVERSION)
+    Annofile = db_path(".tsv")
     taxa_count={}
-    infile=open(Annofile,"r")
-
-    try:
+    o_idx = None
+    
+    with open(Annofile, "r") as infile:
+        header_parsed = False
+        o_idx = None
+        s_idx = None
         for full_lineage in infile:
-            if( full_lineage.startswith('#Accession')):
-                head = full_lineage.strip().split("\t")
-                o_idx = head.index('operon')
+            line = full_lineage.strip()
+            if not line:
                 continue
-            elif( full_lineage.startswith("#") ):
+            if line.startswith('#'):
+                cols = [c.replace("#", "").strip().lower() for c in line.split("\t")]
+                if 'operon' in cols:
+                    o_idx = cols.index('operon')
+                    s_idx = len(cols)
+                    header_parsed = True
                 continue
 
-            taxa=full_lineage.strip().split("\t")
-            operon = int(taxa[o_idx])
-            s = taxa[-1]
-            taxa_count.setdefault(s,[])
-            taxa_count[s].append(operon)
+            cols = line.split("\t")
 
-    except ValueError:
-        WriteLog("Error","Get_Operon")
-
-    finally:
-        infile.close()
-
-    taxa_ave = {}
-    for key, values in taxa_count.items():
-        taxa_ave.setdefault(key,sum(values)/len(values))
-            
-    return taxa_ave
-
-###################
-def READ_GROUP(sampleorder, wtype='type1'):
-    fp=open(options.groupfile,"r")
-    head = fp.readline().split()
-    group_level = len(head)-1
-    GROUP = {}
-    for line in fp:
-        line_temp = line.strip().split()
-        GROUP.setdefault(line_temp[0],line_temp[1:])
-    fp.close()
-
-    groupline = []
-    for level in range(len(group_level)):
-        wlist = []
-        if( wtype == 'type1'):
-            wlist.append('GroupLevel%d'%(level))
-        for sample in sampleorder:
+            if not header_parsed and cols[0].lower() == 'accession':
+                col_lower = [c.lower() for c in cols]
+                o_idx = col_lower.index('operon')
+                s_idx = len(col_lower) - 1
+                header_parsed = True
+                continue
 
             try:
-                g = GROUP[sample][level]
-            except KeyError:
-                g = 'None'
+                operon = int(cols[o_idx])
+                species = cols[s_idx]
+                taxa_count.setdefault(species, []).append(operon)
+            except (ValueError, IndexError, TypeError):
+                continue
+    return {key: sum(vals) / len(vals) for key, vals in taxa_count.items()}
 
+###################
+def build_grouplines():
+    grouplines = []
+    for level in range(len(grouporder)):
+        wlist = [grouporder[level]]
+        for sample in sampleorder:
+            g = 'None'
+            try:
+                g = filepersample[sample][0]['group'][level]
+            except IndexError:
+                pass
             wlist.append(g)
+        grouplines.append("\t".join(wlist) + "\n")
 
-        if( wtype != 'type1' ):
-            wlist.append('GroupLevel%d'%(level))
+    return grouplines
 
-        groupline.append("\t".join(wlist)+"\n")
+###################
+def load_sample_data(outfile_list, tagstr):
+    SAMPLEDATA = {}
+    all_taxa = []
+    for outfile in outfile_list:
+        samplename = os.path.basename(outfile).replace(tagstr, "")
+        SAMPLEDATA[samplename] = {}
+        with open(outfile, "r") as fp:
+            for line in fp:
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    SAMPLEDATA[samplename][parts[0]] = parts[1]
+                    all_taxa.append(parts[0])
 
-    return groupline
+    return SAMPLEDATA, sorted(set(all_taxa))
 
 ###################
 def Make_Merged_Sample_type(outfile_list, tagstr, outfilename):
-    SAMPLEDATA = {}
-    bacteria_kind = [] 
-    for outfile in outfile_list:
-        samplename = os.path.basename(outfile).replace(tagstr,"")
-        SAMPLEDATA.setdefault(samplename,{})
-        fp=open(outfile,"r")
-        for line in fp:
-            line_temp = line.strip().split()
-            SAMPLEDATA[samplename].setdefault(line_temp[0],line_temp[1])
-            bacteria_kind.append(line_temp[0])
-        fp.close()
+    SAMPLEDATA, taxa = load_sample_data(outfile_list, tagstr)
+    grouplines = build_grouplines()
 
+    with open(outfilename, "w") as fpout:
+        fpout.write("\t".join(['#Name'] + sampleorder) + "\n")
+        for gl in grouplines:
+            fpout.write(gl)
+        for kind in taxa:
+            row = [kind] + [SAMPLEDATA.get(s, {}).get(kind, '0') for s in sampleorder]
+            fpout.write("\t".join(row) + "\n")
 
-    bacteria_kind = list(set(bacteria_kind))
-    bacteria_kind.sort()
-
-    grouplines = []
-    for level in range(len(grouporder)):
-        wlist = []
-        levelname = grouporder[level]
-        wlist.append(levelname)
-        for sample in sampleorder:
-            g = 'None'
-            try:
-                
-                g = filepersample[sample][0]['group'][level]
-            except IndexError:
-                g = 'None'
-
-            wlist.append(g)
-        grouplines.append("\t".join(wlist)+"\n")
-
-    fpout=open(outfilename,"w")
-    fpout.write("\t".join(['#Name']+sampleorder)+"\n")
-    if( len(grouporder) > 0 ):
-        for groupline in grouplines:
-            fpout.write(groupline)
-    for kind in bacteria_kind:
-        wlist = [kind]
-        for sample in sampleorder:
-            if( kind in SAMPLEDATA[sample] ):
-                wlist.append(SAMPLEDATA[sample][kind])
-            else:
-                wlist.append('0')
-        fpout.write("\t".join(wlist)+"\n")
-    fpout.close()
-
-    fpout=open(outfilename+".forgraph","w")
-    fpout.write("\t".join(['#Name']+sampleorder)+"\n")
-    for kind in bacteria_kind:
-        wlist = [kind]
-        for sample in sampleorder:
-            if( kind in SAMPLEDATA[sample] ):
-                wlist.append(SAMPLEDATA[sample][kind])
-            else:
-                wlist.append('0')
-        fpout.write("\t".join(wlist)+"\n")
-    fpout.close()
+    if options.stackedplot or options.visualized:
+        with open(outfilename + ".forgraph", "w") as fpout:
+            fpout.write("\t".join(['#Name'] + sampleorder) + "\n")
+            for kind in taxa:
+                row = [kind] + [SAMPLEDATA.get(s, {}).get(kind, '0') for s in sampleorder]
+                fpout.write("\t".join(row) + "\n")
 
 ###################
 def Make_Merged_Sample_type1(outfile_list, tagstr, outfilename):
-    SAMPLEDATA = {}
-    bacteria_kind = [] 
-    for outfile in outfile_list:
-        samplename = os.path.basename(outfile).replace(tagstr,"")
-        SAMPLEDATA.setdefault(samplename,{})
-        fp=open(outfile,"r")
-        for line in fp:
-            line_temp = line.strip().split()
-            SAMPLEDATA[samplename].setdefault(line_temp[0],line_temp[1])
-            bacteria_kind.append(line_temp[0])
-        fp.close()
+    SAMPLEDATA, taxa = load_sample_data(outfile_list, tagstr)
+    grouplines = build_grouplines()
 
-    bacteria_kind = list(set(bacteria_kind))
-    bacteria_kind.sort()
-
-    grouplines = []
-    for level in range(len(grouporder)):
-        wlist = []
-        levelname = grouporder[level]
-        wlist.append(levelname)
-        for sample in sampleorder:
-            g = 'None'
-            try:
-                g = filepersample[sample][0]['group'][level]
-            except IndexError:
-                g = 'None'
-
-            wlist.append(g)
-        grouplines.append("\t".join(wlist)+"\n")
-
-    fpout=open(outfilename,"w")
-    fpout.write("\t".join(['#Name']+sampleorder)+"\n")
-    if( len(grouporder) > 0 ) :
-        for groupline in grouplines:
-            fpout.write(groupline)
-    for kind in bacteria_kind:
-        wlist = [kind]
-        for sample in sampleorder:
-            if( kind in SAMPLEDATA[sample] ):
-                wlist.append(SAMPLEDATA[sample][kind])
-            else:
-                wlist.append('0')
-        fpout.write("\t".join(wlist)+"\n")
-    fpout.close()
+    with open(outfilename, "w") as fpout:
+        fpout.write("\t".join(['#Name'] + sampleorder) + "\n")
+        for gl in grouplines:
+            fpout.write(gl)
+        for kind in taxa:
+            row = [kind] + [SAMPLEDATA.get(s, {}).get(kind, '0') for s in sampleorder]
+            fpout.write("\t".join(row) + "\n")
 
 ###################
 def Make_Merged_Sample_type2(outfile_list, tagstr, outfilename):
-    SAMPLEDATA = {}
-    bacteria_kind = [] 
-    for outfile in outfile_list:
-        samplename = os.path.basename(outfile).replace(tagstr,"")
-        SAMPLEDATA.setdefault(samplename,{})
-        fp=open(outfile,"r")
-        for line in fp:
-            line_temp = line.strip().split()
-            SAMPLEDATA[samplename].setdefault(line_temp[0],line_temp[1])
-            bacteria_kind.append(line_temp[0])
-        fp.close()
+    SAMPLEDATA, taxa = load_sample_data(outfile_list, tagstr)
 
-    bacteria_kind = list(set(bacteria_kind))
-    bacteria_kind.sort()
-
-    fpout=open(outfilename,"w")
-    fpout.write("\t".join(sampleorder+['phylum;class;order;family;genus;species'])+"\n")
-
-    for kind in bacteria_kind:
-        wlist = []
-        for sample in sampleorder:
-            if( kind in SAMPLEDATA[sample] ):
-                wlist.append(SAMPLEDATA[sample][kind])
-            else:
-                wlist.append('0')
-        wlist.append(kind)
-        fpout.write("\t".join(wlist)+"\n")
-    fpout.close()
+    with open(outfilename, "w") as fpout:
+        fpout.write("\t".join(sampleorder + ['taxonomy']) + "\n")
+        for kind in taxa:
+            row = [SAMPLEDATA.get(s, {}).get(kind, '0') for s in sampleorder] + [kind]
+            fpout.write("\t".join(row) + "\n")
 
 ###################
 def step4_Makeoutfile():
@@ -560,247 +483,256 @@ def step4_Makeoutfile():
     SEP = ';'
     
     taxa_ave = Get_Operon()
+    category = get_taxonomy_categories()
 
-    idx = 0
-    for sample, sampleinfo in filepersample.items():
-        idx += 1
-
-        classification_path = "%s/%s.txt" % (infolder, os.path.basename(sample))
-        outfile_levelremove_path="%s/%s_out_removelevel.txt" % (outfolder, os.path.basename(sample) )
-        outfile_path="%s/%s_out.txt" % (outfolder, os.path.basename(sample) )
-        
-        WDATA_remove = {}
-        fpout_remove=open(outfile_levelremove_path,"w")
-        WDATA = {}
-        fpout=open(outfile_path,"w")
-        fp=open(classification_path,"r")
-        category=['p','c','o','f','g','s']
-        for line in fp:
-            line_temp = line.strip().split()
-            new_line_temp = [] 
-            idx = 0
-            for value in line_temp[:-1]:
-                value = "%s__%s" % (category[idx],value)
-                new_line_temp.append(value)
-                idx += 1
-
-            taxa = line_temp[-2]
-
-            count = int(line_temp[-1])
-            if( options.normalization ):
-                count = count / taxa_ave[taxa]
-
-            tempstr = SEP.join(new_line_temp)
-            WDATA.setdefault(tempstr,0)
-            WDATA[tempstr] += count
-
-            for i in range(1,len(new_line_temp)+1):
-                tempstr = SEP.join(new_line_temp[:i])
-                WDATA_remove.setdefault(tempstr,0)
-                WDATA_remove[tempstr] += count
-        
-        for tempstr, count in WDATA.items():
-            fpout.write(" ".join(map(str,[tempstr,count]))+"\n")
-            
-        for tempstr, count in WDATA_remove.items():
-            fpout_remove.write(" ".join(map(str,[tempstr,count]))+"\n")
-            
-        fp.close()
-        fpout.close()
-        fpout_remove.close()
-
-
-    outfile_levelremove_list = []
     outfile_list = []
+    outfile_levelremove_list = []
+
     for sample, sampleinfo in filepersample.items():
-        outfile_path="%s/%s_out.txt" % (outfolder, os.path.basename(sample) )
+        classification_path = "%s/%s.txt" % (infolder, os.path.basename(sample))
+        outfile_path = "%s/%s_out.txt" % (outfolder, os.path.basename(sample))
+        outfile_levelremove_path = "%s/%s_out_removelevel.txt" % (outfolder, os.path.basename(sample))
+
+        WDATA = {}
+        WDATA_remove = {}
+
+        with open(classification_path, "r") as fp:
+            for line in fp:
+                line_temp = line.strip().split()
+                if not line_temp:
+                    continue
+                taxa_fields = line_temp[:-1]
+                try:
+                    count = int(float(line_temp[-1]))
+                except ValueError:
+                    continue
+
+                new_line_temp = [
+                        "%s__%s" % (category[i], v) if i < len(category) else v
+                        for i, v in enumerate(taxa_fields)
+                ]
+
+                taxa_species = line_temp[-2] if len(line_temp) >= 2 else ''
+                if options.normalization and taxa_species in taxa_ave and taxa_ave[taxa_species] > 0:
+                    count = count / taxa_ave[taxa_species]
+
+                tempstr = SEP.join(new_line_temp)
+                WDATA[tempstr] = WDATA.get(tempstr, 0) + count
+
+                for i in range(1, len(new_line_temp) + 1):
+                    t2 = SEP.join(new_line_temp[:i])
+                    WDATA_remove[t2] = WDATA_remove.get(t2, 0) + count
+
+        with open(outfile_path, "w") as fp:
+            for k, v in WDATA.items():
+                fp.write("%s %s\n" % (k, round(v)))
+        with open(outfile_levelremove_path, "w") as fp:
+            for k, v in WDATA_remove.items():
+                fp.write("%s %s\n" % (k, round(v)))
+
         outfile_list.append(outfile_path)
-
-        outfile_levelremove_path="%s/%s_out_removelevel.txt" % (outfolder, os.path.basename(sample) )
         outfile_levelremove_list.append(outfile_levelremove_path)
-        
 
-    merged_file = "%s/OUTPUT_std.txt" % (outfolder)
-    Make_Merged_Sample_type(outfile_list, '_out.txt', merged_file) 
-    WriteLog("INFO","Created OTU table (standard version)  : %s" %(merged_file))
+    merged_file = "%s/OUTPUT_std.txt" % outfolder
+    Make_Merged_Sample_type(outfile_list, '_out.txt', merged_file)
+    WriteLog("INFO", "Created feature table (standard version) : %s" % merged_file)
 
-    merged_file = "%s/OUTPUT_mpa.txt" % (outfolder)
-    Make_Merged_Sample_type1(outfile_levelremove_list, '_out_removelevel.txt', merged_file)
-    WriteLog("INFO","                  (MetaPhlAn version) : %s" %(merged_file))
+    merged_mpa = "%s/OUTPUT_mpa.txt" % outfolder
+    Make_Merged_Sample_type1(outfile_levelremove_list, '_out_removelevel.txt', merged_mpa)
+    WriteLog("INFO", "                      (MetaPhlAn version): %s" % merged_mpa)
 
-    merged_file = "%s/OUTPUT_std_type2.txt" % (outfolder)
-    Make_Merged_Sample_type2(outfile_list, '_out.txt', merged_file)
-    WriteLog("INFO","                  (for Krona plot)    : %s" %(merged_file))
-
+    merged_type2 = "%s/OUTPUT_std_type2.txt" % outfolder
+    Make_Merged_Sample_type2(outfile_list, '_out.txt', merged_type2)
+    WriteLog("INFO", "                      (for Krona plot)   : %s" % merged_type2)
 
     for rfile in outfile_list + outfile_levelremove_list:
-        if( os.path.isfile(rfile)):
-            os.unlink(rfile)        
+        if os.path.isfile(rfile):
+            os.unlink(rfile)
 
     return True
 
 ###################
-def stacked_plot(result, taxa_level, group, outfile):
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from matplotlib import cm
-    import pandas as pd
+def stacked_plot(result, taxa_level, outfile_pdf):
     import matplotlib
     matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import pandas as pd
 
     SEP = ";"
-    lineage = ["phylum","class","order","family","genus","species"]
-    cmap = cm.get_cmap("Spectral")
-    df = pd.read_csv(result, sep="\t")
-    df['#Name'] = df['#Name'].apply(lambda taxonomy: taxonomy.split(SEP)[lineage.index(taxa_level)])
-    df = df.groupby('#Name').sum()
-    df = df.div(df.sum()).transpose()
-    f = plt.figure()
-    plt.title("Stacked bar plot - "+taxa_level, color='black')
-    df.plot(kind='bar',stacked=True,rot=90,cmap=cmap, ax=f.gca())
-    plt.legend(loc='upper left', bbox_to_anchor=(1,1), ncol=1)
-    plt.xlabel("sample")
-    plt.savefig(outfile,bbox_inches='tight')
+    levels = get_lineage_levels()
+    rank_prefixes = [l[0] + "__" for l in levels]
 
-    return
+    try:
+        cmap = matplotlib.colormaps.get_cmap("Spectral")
+    except AttributeError:
+        import matplotlib.cm as cm
+        cmap = cm.get_cmap("Spectral")
+
+    df = pd.read_csv(result, sep="\t")
+
+    df = df[df['#Name'].str.startswith(tuple(rank_prefixes))]
+
+    target_prefix = taxa_level[0] + "__"
+
+    def extract_level(taxonomy):
+        for part in taxonomy.split(SEP):
+            if part.startswith(target_prefix):
+                return part
+        return taxonomy.split(SEP)[0]
+
+    df['#Name'] = df['#Name'].apply(extract_level)
+    df = df.groupby('#Name').sum(numeric_only=True)
+
+    col_sums = df.sum()
+    col_sums = col_sums.replace(0, 1)
+    df = df.div(col_sums).transpose()
+
+    n_samples = len(df)
+    n_taxa = len(df.columns)
+    fig_width = max(6, n_samples * 0.7 + 3)
+    fig, ax = plt.subplots(figsize=(fig_width, 6))
+
+    df.plot(kind='bar', stacked=True, rot=45, cmap=cmap, ax=ax)
+    ax.set_title("Stacked bar plot — %s level" % taxa_level, fontsize=12)
+    ax.set_xlabel("Sample", fontsize=10)
+    ax.set_ylabel("Relative abundance", fontsize=10)
+    ax.legend(loc='upper left', bbox_to_anchor=(1.01, 1), ncol=1,
+              fontsize=7, title=taxa_level, title_fontsize=8)
+    ax.set_ylim(0, 1)
+    ax.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(xmax=1, decimals=0))
+    plt.tight_layout()
+    plt.savefig(outfile_pdf, format='pdf', bbox_inches='tight')
+    plt.close(fig)
 
 ###################
 def step5_graph():
     infolder = "%s/%s"%(options.outputfolder, ProcessStep[4])
     outfolder = "%s/%s"%(options.outputfolder, ProcessStep[5])
     mirror_abspath = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    removedlevel_merged_file = "%s/OUTPUT_mpa.txt" % (infolder)
-    merged_file = "%s/OUTPUT_std.txt" % (infolder)
-    merged_file_forgraph = "%s/OUTPUT_std.txt.forgraph" % (infolder)
-    merged_type2_file = "%s/OUTPUT_std_type2.txt" % (infolder)
+    
+    merged_file_forgraph = "%s/OUTPUT_std.txt.forgraph" % infolder
+    merged_type2_file = "%s/OUTPUT_std_type2.txt" % infolder
 
     mustremovefile = []
 
-    if(options.krona is not None or options.visualized is not None ):
-        krona_log_file = "%s/krona.log" % (outfolder)
-        if( os.path.isdir("%s/krona" % (outfolder))):
-            os.system("rm -rf %s/krona"%(outfolder))
+    if options.krona or options.visualized:
+        krona_log_file = "%s/krona.log" % outfolder
+        krona_dir = "%s/krona" % outfolder
+        if os.path.isdir(krona_dir):
+            subprocess.run(["rm", "-rf", krona_dir])
         mustremovefile.append(krona_log_file)
-        
 
-    plot_sh = "%s/graph.sh" % (outfolder)
-    fpout=open(plot_sh,"w")
-    fpout.write("cd %s\n" % (outfolder))
-    if(options.krona is not None or options.visualized is not None ):
-        fpout.write("%s/lib/OTUsamples2krona.v0.2.2.sh %s > %s 2>&1\n" % (mirror_abspath, merged_type2_file, krona_log_file) )
+        plot_sh = "%s/graph.sh" % outfolder
+        with open(plot_sh, "w") as fpout:
+            fpout.write("cd %s\n" % outfolder)
+            fpout.write("%s/lib/OTUsamples2krona.v0.2.2.sh %s > %s 2>&1\n" % (
+                        mirror_abspath, merged_type2_file, krona_log_file))
+        mustremovefile.append(plot_sh)
 
-    fpout.close()
-    mustremovefile.append(plot_sh)
+        ret = subprocess.run(["sh", plot_sh])
+        if ret.returncode != 0:
+            WriteLog("Warning", "Krona plot generation may have encountered errors. "
+                     "Ensure KronaTools (ktImportText) is installed and in $PATH.")
 
-    return_value = os.system("sh %s" %(plot_sh))
+    if options.stackedplot or options.visualized:
+        levels = get_lineage_levels()
+        for level in levels:
+            outfile_pdf = "%s/stacked_%s.pdf" % (outfolder, level)
+            try:
+                stacked_plot(merged_file_forgraph, level, outfile_pdf)
+                pad = " " * max(1, 10 - len(level))
+                if level == levels[0]:
+                    WriteLog("INFO", "Created stacked bar plot (%s)%s: %s" % (level, pad, outfile_pdf))
+                else:
+                    WriteLog("INFO", "                         (%s)%s: %s" % (level, pad, outfile_pdf))
+            except Exeption as e:
+                WriteLog("Warning", "Could not generate stacked plot for %s: %s" % (level, str(e)))
 
-    if(options.stackedplot is not None or options.visualized is not None ):
-        for domain in ['phylum','class','order','family','genus','species']:
-            stacked_file = "%s/stacked_%s.png" % (outfolder, domain)
-            stacked_plot(merged_file_forgraph, domain ,"group", stacked_file)
-            
-            blank = " " * (11-len(domain))
-            if( domain == 'phylum' ):
-                WriteLog("INFO","Created Stacked bar plot (%s)%s: %s" % (domain, blank, stacked_file))
-            else:
-                WriteLog("INFO","                         (%s)%s: %s" % (domain, blank, stacked_file))
-    
-    mustremovefile.append(merged_file_forgraph)    
+    mustremovefile.append(merged_file_forgraph)
 
     for rfile in mustremovefile:
-        if( os.path.isfile(rfile)):
-            writelog = False
-            if( os.path.basename(rfile) == 'krona.log'):
+        if os.path.isfile(rfile):
+            if os.path.basename(rfile) == 'krona.log':
                 WriteLog("INFO", "Log from OTUsamples2krona")
-                writelog = True
-                
-            if( writelog ):
-                fp=open(rfile,"r")
-                for line in fp:
-                    WriteLog("LOG",line.strip(),True)
-                fp.close()
-                
+                with open(rfile, "r") as fp:
+                    for line in fp:
+                        WriteLog("LOG", line.strip(), True)
             os.unlink(rfile)
 
-    if(options.krona is not None or options.visualized is not None ):
-        if( os.path.isdir("%s/krona" % (outfolder)) ):
-            WriteLog("INFO","Created Krona plot                    :  %s/krona" % (outfolder))
+    if options.krona or options.visualized:
+        if os.path.isdir("%s/krona" % outfolder):
+            WriteLog("INFO", "Created Krona plot : %s/krona" % outfolder)
 
     return True
 
 ###################
-def Proceding(step):
-    rv = False
-
+def Proceeding(step):
     if( step == 1):
-        WriteLog("INFO","%s STEP START"%(ProcessStep[step]) )
+        WriteLog("INFO","[STEP 1] %s"%(ProcessStep[step]) )
         MakeFolder(step,False)
-        rv = step1_Rawdata()
+        return step1_Rawdata()
 
     elif( step == 2 ):
-        exemapping = 0
-        for sample, sampleinfo in filepersample.items():
-            if( sampleinfo[0]['format'] in ['FASTQ','FASTA']):
-                exemapping += 1
-        if( exemapping ):
-            WriteLog("INFO","%s STEP START"%(ProcessStep[step]) )
+        exemapping = sum(
+            1 for si in filepersample.values()
+            if si[0]['format'] in ['FASTQ', 'FASTA']
+        )
+        if exemapping:
+            WriteLog("INFO", "[STEP 2] %s" % ProcessStep[step])
             MakeFolder(step)
-            rv = step2_Mapping(exemapping)
+            return step2_Mapping(exemapping)
         else:
-            rv = True
-
+            WriteLog("INFO", "[STEP 2] %s skipping..." % ProcessStep[step])
+        return True
+    
     elif( step == 3 ):
-        WriteLog("INFO","%s STEP START"%(ProcessStep[step]) )
+        WriteLog("INFO","[STEP 3] %s"%(ProcessStep[step]) )
         MakeFolder(step)
-        rv = step3_Annotaion(skipmapping)
+        return step3_Annotaion(skipmapping)
 
     elif( step == 4 ):
-        WriteLog("INFO","%s STEP START"%(ProcessStep[step]) )
+        WriteLog("INFO","[STEP 4] %s"%(ProcessStep[step]) )
         MakeFolder(step)
-        rv = step4_Makeoutfile()
+        return step4_Makeoutfile()
 
     elif( step == 5 ):
-        WriteLog("INFO","%s STEP START"%(ProcessStep[step]) )
+        WriteLog("INFO","[STEP 5] %s"%(ProcessStep[step]) )
         MakeFolder(step)
-        rv = step5_graph() 
+        return step5_graph() 
 
-    return rv
+    return False
 
 ###################
 def Main(l_options,l_args, l_command):
-    global options
-    global args
-    global fplog
-    global mycommand
-    global skipmapping 
+    global options, args, fplog, mycommand, skipmapping
 
     start = time.time()
     options = l_options
     args = l_args
     mycommand = l_command
+    
     fplogfile = MakeLogfile()
     fplog = open(fplogfile,"w")
     
     rv = ConfirmInput_main()
     if( rv ):
         WriteLog("INFO",'MIrROR analysis Start')
-        CurrentProcess = {1:'filecheck',2:'mapping',3:'classification',4:'OTUtable'}
+        CurrentProcess = {1:'Input QC',2:'Read Mapping',3:'Taxonomic Classification',4:'Feature Table Construction'}
 
         if( options.krona or options.stackedplot or options.visualized ):
-            CurrentProcess.setdefault(5,'visualization')
+            CurrentProcess[5] = 'Visualization'
 
         for step, foldname in CurrentProcess.items():
-            rv = Proceding(step)
+            rv = Proceeding(step)
             if( not rv ):
                 WriteLog("Error","Error occurred during step %s"%(foldname))
-                sys.exit()
+                fplog.close()
+                sys.exit(1)
         WriteLog("INFO",'MIrROR analysis Completed!')
     else:
-        WriteLog("Error",'Input File Error')
+        WriteLog("Error",'Input File Error -check file paths and database.')
 
-    end = time.time()
-    elapsed_time = datetime.timedelta(seconds=end-start)
-    WriteLog("INFO", "\n%-26s : %s" % ("Total time used",elapsed_time), True)
+    elapsed = datetime.timedelta(seconds=time.time()-start)
+    WriteLog("INFO", "\n%-26s : %s" % ("Total time used",elapsed), True)
     fplog.close()
     print("\nMIrROR analysis log file is created : %s\n" % (fplogfile))
