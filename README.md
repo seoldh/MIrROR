@@ -51,7 +51,7 @@ See [MIrROR Website](http://mirror2.egnome.co.kr/) for more information.
 ### Available releases
 | Release | Sequences | Genomes | Species | Taxonomy | Download |
 |---------|-----------|---------|---------|----------|----------|
-| r01 | 97,781 | 43,653 | 9,485 | GTDB R89 | [legacy](http://mirror.egnome.co.kr/media/ToolsDatabase/2021_06/) |
+| r01 | 97,781 | 43,653 | 9,485 | GTDB R89 | [legacy](https://mirror2.egnome.co.kr/download/) |
 | **r02** (recommended) | **476,579** | **249,907** | **29,051** | **GTDB R220** | [**Zenodo**](https://doi.org/10.5281/zenodo.17639192) |
 
 ### ⚠️ Recommended database preparation workflow
